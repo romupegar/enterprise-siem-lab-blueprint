@@ -1,0 +1,23 @@
+<!-- Custom Wazuh Detection Rules - Mapped to MITRE ATT&CK -->
+<group name="local,syslog,sshd,privilege_escalation,">
+
+  <!-- Detect successful SSH authentication outside authorized maintenance windows -->
+  <rule id="100101" level="10">
+    <if_sid>5715</if_sid>
+    <time>00:00 - 06:00</time>
+    <description>SSH: Valid account login detected outside standard operational hours.</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <!-- Detect potential privilege escalation brute-force via sudo -->
+  <rule id="100102" level="12" frequency="3" timeframe="120">
+    <if_matched_sid>5401</if_matched_sid>
+    <description>Privilege Escalation: Repeated failed sudo authentication attempts.</description>
+    <mitre>
+      <id>T1548.003</id>
+    </mitre>
+  </rule>
+
+</group>
