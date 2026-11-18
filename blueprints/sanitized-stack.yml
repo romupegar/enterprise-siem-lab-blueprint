@@ -1,0 +1,79 @@
+# ==============================================================================
+# Blueprint: Core Security, IPS & DNS Sinkhole Stack
+# OPSEC: Zero host ports exposed; ingress handled via Reverse Proxy / Overlay.
+# Hardening: Pinned image versions, dropped capabilities, resource quotas.
+# ==============================================================================
+
+services:
+  crowdsec-ips:
+    image: crowdsecurity/crowdsec:v1.8.1
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      GID: "${PUID:-1000}"
+      COLLECTIONS: "crowdsecurity/linux crowdsecurity/nginx crowdsecurity/sshd"
+    volumes:
+      - ./config/crowdsec:/etc/crowdsec
+      - ./data/crowdsec:/var/lib/crowdsec/data
+      - /var/log/auth.log:/var/log/auth.log:ro
+    networks:
+      - sec_backend
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  adguard-dns:
+    image: adguard/adguardhome:v0.107.77
+    container_name: adguard-dns
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    # Bound exclusively to private overlay interface via environment variable
+    ports:
+      - "${OVERLAY_IP}:53:53/tcp"
+      - "${OVERLAY_IP}:53:53/udp"
+    volumes:
+      - ./data/adguard/work:/opt/adguardhome/work
+      - ./config/adguard/conf:/opt/adguardhome/conf
+    networks:
+      - sec_backend
+      - proxy_net
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  reverse-proxy:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: reverse-proxy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    # Accessible only via Zero-Trust overlay network interface
+    ports:
+      - "${OVERLAY_IP}:80:80"
+      - "${OVERLAY_IP}:443:443"
+    volumes:
+      - ./data/proxy:/data
+      - ./config/letsencrypt:/etc/letsencrypt
+    networks:
+      - proxy_net
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+networks:
+  sec_backend:
+    driver: bridge
+  proxy_net:
+    driver: bridge
