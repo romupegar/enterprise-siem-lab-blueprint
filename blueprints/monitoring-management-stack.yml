@@ -1,0 +1,90 @@
+# ==============================================================================
+# Blueprint: Observability, Container Management & DNS High-Availability Sync
+# Security: Docker socket isolated via read-only proxy; zero host ports exposed.
+# ==============================================================================
+
+services:
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      INFO: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      POST: 0  # Strictly read-only API access
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - mgmt_internal
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command: -H tcp://docker-socket-proxy:2375
+    depends_on:
+      - docker-socket-proxy
+    volumes:
+      - ./data/portainer:/data
+    networks:
+      - mgmt_internal
+      - proxy_net
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:2.5.10
+    container_name: uptime-kuma
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ./data/kuma:/app/data
+      - "${NAS_BACKUP_PATH}:/app/backups"
+    networks:
+      - proxy_net
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  adguard-sync:
+    image: ghcr.io/bakito/adguardhome-sync:v0.9.5
+    container_name: adguard-sync
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command: run
+    environment:
+      ORIGIN_URL: "http://adguard-dns:3000"
+      ORIGIN_USERNAME: "${DNS_ADMIN_USER}"
+      ORIGIN_PASSWORD: "${DNS_ADMIN_PASS}"
+      REPLICA_URL: "${FAILOVER_DNS_URL}"
+      REPLICA_USERNAME: "${DNS_ADMIN_USER}"
+      REPLICA_PASSWORD: "${DNS_ADMIN_PASS}"
+      CRON: "*/15 * * * *"
+    networks:
+      - proxy_net
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+
+networks:
+  mgmt_internal:
+    driver: bridge
+    internal: true
+  proxy_net:
+    external: true
